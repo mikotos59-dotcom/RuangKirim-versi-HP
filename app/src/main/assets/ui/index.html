@@ -18,7 +18,17 @@
     <button class="ib" id="bSet" title="Pengaturan" aria-label="Pengaturan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg></button>
   </header>
 
-  <div class="pending" id="pending" hidden><b id="pendTxt"></b><button class="btn sm" id="pendX">Batal</button></div>
+  <section class="basket" id="basket">
+    <div class="bar bh">
+      <h2>Keranjang kirim</h2>
+      <button class="btn" id="bAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>File</button>
+      <button class="btn" id="bAddDir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Folder</button>
+      <button class="btn" id="bEmpty" hidden>Kosongkan</button>
+    </div>
+    <div class="bitems" id="bItems"></div>
+    <textarea class="field msg" id="msg" rows="2" maxlength="20000" placeholder="Tulis pesan (opsional): catatan, link, teks yang mau disalin di perangkat lain…"></textarea>
+    <div class="bfoot"><span class="muted" id="bTo"></span><button class="btn pri" id="bSend" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span id="bSendT">Kirim</span></button></div>
+  </section>
 
   <div class="bar">
     <h2>Perangkat</h2>
@@ -40,7 +50,7 @@
 </div>
 
 <div class="modal" id="modal" hidden><div class="box" id="box"></div></div>
-<div class="dropall" id="dropall" hidden>Lepas di kartu perangkat tujuan</div>
+<div class="dropall" id="dropall" hidden>Lepas untuk menambah ke keranjang</div>
 <div class="toast" id="toast" hidden></div>
 
 <script src="app.js"></script>

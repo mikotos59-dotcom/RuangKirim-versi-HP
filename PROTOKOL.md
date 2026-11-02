@@ -24,7 +24,7 @@ Perangkat yang baru menyala mengirim `"t":"cari"`, dan yang lain membalas `"hai"
 
 ## Pesan
 - **Kirim:**
-  1. → `{"t":"kirim","files":[{"n","s"}],"total"}`
+  1. → `{"t":"kirim","files":[{"n","s"}],"total","msg"}` (`msg` = pesan teks, maks. 20.000 karakter; `files` boleh kosong kalau ada pesan)
   2. ← `{"t":"terima"}` atau `{"t":"tolak","why"}`
   3. → frame data, berurutan per file sesuai ukuran (potongan 256 KB)
   4. → `{"t":"selesai"}`

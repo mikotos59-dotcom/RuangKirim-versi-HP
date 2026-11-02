@@ -59,7 +59,14 @@ public class MainActivity extends Activity implements KirimService.Listener {
     private boolean ready = false;
     private String pickFor = null;
     private int pickReq = 0;
-    private final List<Core.Source> pending = new ArrayList<>();
+    // keranjang: file dikumpulkan dulu, lalu dikirim ke satu atau beberapa perangkat
+    private final List<Core.Source> basket = new ArrayList<>();
+    private final List<String> basketKeys = new ArrayList<>();
+    private int bseq = 0;
+    private void basketAdd(List<Core.Source> src) {
+        synchronized (basket) { for (Core.Source x : src) { basket.add(x); basketKeys.add("b" + (++bseq)); } }
+        pushState();
+    }
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -137,17 +144,22 @@ public class MainActivity extends Activity implements KirimService.Listener {
     }
     private void pushState(JSONObject s) {
         if (!ready) return;
-        try { s.put("pending", pendingJson()); } catch (Exception ignored) { }
+        try { s.put("basket", basketJson()); } catch (Exception ignored) { }
         web.evaluateJavascript("window.__rkState&&__rkState(" + s + ")", null);
     }
     private static Core core() { KirimService k = KirimService.inst; return k == null ? null : k.core; }
 
-    private JSONObject pendingJson() throws Exception {
-        synchronized (pending) {
-            if (pending.isEmpty()) return null;
+    private JSONObject basketJson() throws Exception {
+        synchronized (basket) {
+            if (basket.isEmpty()) return null;
             long total = 0;
-            for (Core.Source x : pending) total += Math.max(0, x.size());
-            return new JSONObject().put("count", pending.size()).put("total", total);
+            JSONArray items = new JSONArray();
+            for (int i = 0; i < basket.size(); i++) {
+                Core.Source x = basket.get(i);
+                total += Math.max(0, x.size());
+                items.put(new JSONObject().put("k", basketKeys.get(i)).put("n", x.name()).put("s", Math.max(0, x.size())).put("dir", false).put("count", 1));
+            }
+            return new JSONObject().put("items", items).put("count", basket.size()).put("total", total);
         }
     }
 
@@ -173,23 +185,20 @@ public class MainActivity extends Activity implements KirimService.Listener {
         bg.execute(() -> {
             List<Core.Source> src = new ArrayList<>();
             for (Uri u : uris) { try { src.add(source(u)); } catch (Exception e) { toast("File tidak bisa dibaca: " + e.getMessage()); } }
-            synchronized (pending) { pending.clear(); pending.addAll(src); }
-            pushState();
+            basketAdd(src);
         });
     }
     // teks yang dibagikan dikirim sebagai file .txt
     private void addText(String text) {
         byte[] b = text.getBytes(StandardCharsets.UTF_8);
         String name = "teks-" + new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(new java.util.Date()) + ".txt";
-        synchronized (pending) {
-            pending.clear();
-            pending.add(new Core.Source() {
-                public String name() { return name; }
-                public long size() { return b.length; }
-                public InputStream open() { return new ByteArrayInputStream(b); }
-            });
-        }
-        pushState();
+        List<Core.Source> one = new ArrayList<>();
+        one.add(new Core.Source() {
+            public String name() { return name; }
+            public long size() { return b.length; }
+            public InputStream open() { return new ByteArrayInputStream(b); }
+        });
+        basketAdd(one);
     }
 
     /** Sumber file dari content:// (nama & ukuran dari penyedia; kalau ukuran tidak diketahui, disalin dulu). */
@@ -241,10 +250,10 @@ public class MainActivity extends Activity implements KirimService.Listener {
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         if (req != REQ_PICK) return;
-        String id = pickFor;
         int rid = pickReq;
+        boolean was = pickFor != null;
         pickFor = null;
-        if (res != RESULT_OK || data == null || id == null) { reply(rid, true, "null"); return; }
+        if (res != RESULT_OK || data == null || !was) { reply(rid, true, "0"); return; }
         List<Uri> uris = new ArrayList<>();
         ClipData cd = data.getClipData();
         if (cd != null) for (int i = 0; i < cd.getItemCount(); i++) uris.add(cd.getItemAt(i).getUri());
@@ -252,9 +261,8 @@ public class MainActivity extends Activity implements KirimService.Listener {
         bg.execute(() -> {
             List<Core.Source> src = new ArrayList<>();
             for (Uri u : uris) { try { src.add(source(u)); } catch (Exception e) { toast("File tidak bisa dibaca: " + e.getMessage()); } }
-            Core c = core();
-            if (c != null && !src.isEmpty()) c.send(id, src);
-            reply(rid, true, "true");
+            basketAdd(src);
+            reply(rid, true, String.valueOf(src.size()));
         });
     }
 
@@ -273,7 +281,7 @@ public class MainActivity extends Activity implements KirimService.Listener {
             JSONArray a;
             try { a = new JSONArray(argsJson); } catch (Exception e) { a = new JSONArray(); }
             final JSONArray args = a;
-            if (m.equals("send")) { main.post(() -> pick(id, args.optString(0))); return; }
+            if (m.equals("basketAdd")) { main.post(() -> pick(id, "keranjang")); return; }
             if (m.equals("scanQr")) { main.post(() -> scan(id)); return; }
             bg.execute(() -> {
                 Core c = core();
@@ -287,23 +295,40 @@ public class MainActivity extends Activity implements KirimService.Listener {
 
     private String run(Core c, String m, JSONArray a) throws Exception {
         switch (m) {
-            case "state": { JSONObject s = c.state(); s.put("pending", pendingJson()); return s.toString(); }
-            case "sendPending": {
+            case "state": { JSONObject s = c.state(); s.put("basket", basketJson()); return s.toString(); }
+            case "sendBasket": {
+                JSONArray ids = a.optJSONArray(0);
+                String msg = a.optString(1, "");
+                if (ids == null || ids.length() == 0) throw new Exception("Pilih perangkat tujuan dulu");
                 List<Core.Source> src;
-                synchronized (pending) { src = new ArrayList<>(pending); pending.clear(); }
-                if (src.isEmpty()) throw new Exception("Tidak ada file yang menunggu dikirim");
-                c.send(a.optString(0), src);
+                synchronized (basket) { src = new ArrayList<>(basket); }
+                if (src.isEmpty() && msg.trim().isEmpty()) throw new Exception("Keranjang kosong. Tambah file atau tulis pesan.");
+                for (int i = 0; i < ids.length(); i++) c.send(ids.optString(i), src, msg);
+                if (!c.settings().optBoolean("keepBasket")) synchronized (basket) { basket.clear(); basketKeys.clear(); }
+                pushState();
+                return String.valueOf(ids.length());
+            }
+            case "basketRemove": {
+                synchronized (basket) { int i = basketKeys.indexOf(a.optString(0)); if (i >= 0) { basket.remove(i); basketKeys.remove(i); } }
                 pushState();
                 return "true";
             }
-            case "clearPending": synchronized (pending) { pending.clear(); } pushState(); return "true";
+            case "basketClear": synchronized (basket) { basket.clear(); basketKeys.clear(); } pushState(); return "true";
+            case "copy": {
+                String t = a.optString(0);
+                main.post(() -> {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("Ruang Kirim", t));
+                });
+                return "true";
+            }
             case "pair": return JSONObject.quote(c.pair(a.optString(0)));
             case "pairCode": return JSONObject.quote(c.pairCode(a.optString(0)));
             case "respond": c.respond(a.optString(0), a.optBoolean(1)); return "true";
             case "cancel": c.cancel(a.optString(0)); return "true";
             case "forget": c.forget(a.optString(0)); return "true";
             case "rename": c.rename(a.optString(0)); return "true";
-            case "setting": c.setting(a.optString(0), a.optBoolean(1)); return "true";
+            case "setting": c.setting(a.optString(0), a.optBoolean(1)); pushState(); return "true";
             case "addIp": return JSONObject.quote(c.addIp(a.optString(0)));
             case "rescan": c.rescan(); return "true";
             case "clearDone": c.clearDone(); return "true";

@@ -1,5 +1,12 @@
 # Catatan rilis
 
+## 0.1.1
+- **Keranjang kirim:** file dan folder dikumpulkan dulu di keranjang, bisa dikeluarkan satu-satu atau dikosongkan. Pilihan di Pengaturan: keranjang dikosongkan setelah kirim (bawaan) atau tetap disimpan.
+- **Kirim ke beberapa perangkat sekaligus:** ketuk kartu perangkat untuk memilih tujuan (bisa lebih dari satu), lalu tekan Kirim. Kalau hanya ada satu perangkat aktif, otomatis terpilih.
+- **Kirim pesan:** tulis pesan di keranjang. Bisa dikirim bersama file atau sendiri. Penerima melihat pesannya di jendela Terima/Tolak dan bisa menyalinnya.
+- Perbaikan: tampilan "Lepas di kartu perangkat tujuan" yang tertinggal saat menyeret file. Sekarang file bisa dilepas di mana saja di jendela dan otomatis masuk keranjang.
+- Catatan: versi 0.1.1 perlu dipasang di semua perangkat (PC dan HP), karena format kiriman bertambah pesan.
+
 ## 0.1.0
 - Kirim file antar HP dan PC di WiFi yang sama, tanpa internet dan tanpa server.
 - Enkripsi ujung ke ujung: ECDH P-256 + AES-256-GCM.

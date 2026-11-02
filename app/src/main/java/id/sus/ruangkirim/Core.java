@@ -50,7 +50,7 @@ final class Core {
 
     static final class Device { String id, name, type, ip; int port; long seen; }
     static final class Transfer {
-        String id, dir, status = "menyambung", err = "", current = "";
+        String id, dir, status = "menyambung", err = "", current = "", msg = "";
         Proto.Peer peer = new Proto.Peer();
         List<String[]> files = new ArrayList<>(); // [nama, ukuran]
         long total, done, speed, at = System.currentTimeMillis(), t0, tl, dl;
@@ -107,6 +107,7 @@ final class Core {
             if (!s.has("name")) s.put("name", defaultName);
             if (!s.has("autoKnown")) s.put("autoKnown", false);
             if (!s.has("onlyKnown")) s.put("onlyKnown", false);
+            if (!s.has("keepBasket")) s.put("keepBasket", false);
             s.put("saveDir", "Download/RuangKirim");
             c.put("settings", s);
             if (c.optJSONObject("known") == null) c.put("known", new JSONObject());
@@ -274,7 +275,7 @@ final class Core {
         o.put("files", fs); o.put("count", t.files.size()); o.put("total", t.total); o.put("done", t.done);
         o.put("status", t.status); o.put("err", t.err); o.put("speed", t.speed); o.put("current", t.current);
         synchronized (t.saved) { o.put("saved", new JSONArray(t.saved)); }
-        o.put("at", t.at); o.put("known", t.known);
+        o.put("at", t.at); o.put("known", t.known); o.put("msg", t.msg);
         return o;
     }
     void emit() {
@@ -329,7 +330,7 @@ final class Core {
         save(); pool.execute(() -> announce("hai")); emit();
     }
     void setting(String k, boolean v) {
-        if (!k.equals("autoKnown") && !k.equals("onlyKnown")) return;
+        if (!k.equals("autoKnown") && !k.equals("onlyKnown") && !k.equals("keepBasket")) return;
         try { settings().put(k, v); } catch (Exception ignored) { }
         save(); emit();
     }
@@ -465,7 +466,9 @@ final class Core {
     void clearDone() { synchronized (transfers) { transfers.removeIf(t -> !t.active()); } emit(); }
     boolean busy() { synchronized (transfers) { for (Transfer t : transfers) if (t.active()) return true; } return false; }
 
-    void send(String id, List<Source> src) {
+    /** src boleh kosong kalau hanya mengirim pesan. */
+    void send(String id, List<Source> src, String msg) {
+        String m = msg == null ? "" : (msg.length() > 20000 ? msg.substring(0, 20000) : msg);
         List<String[]> files = new ArrayList<>();
         for (Source s : src) files.add(new String[]{Core.safeRel(s.name()), String.valueOf(Math.max(0, s.size()))});
         String pname = "Perangkat", ptype = "pc";
@@ -473,6 +476,7 @@ final class Core {
         JSONObject k = known().optJSONObject(id);
         if (d != null) { pname = d.name; ptype = d.type; } else if (k != null) { pname = k.optString("name"); ptype = k.optString("type"); }
         Transfer t = newTransfer("kirim", id, pname, ptype, files, isKnown(id));
+        t.msg = m;
         pool.execute(() -> sendRun(t, id, src));
     }
     private void sendRun(Transfer t, String id, List<Source> src) {
@@ -488,7 +492,7 @@ final class Core {
             offer.put("t", "kirim");
             JSONArray fa = new JSONArray();
             for (String[] f : t.files) { JSONObject o = new JSONObject(); o.put("n", f[0]); o.put("s", Long.parseLong(f[1])); fa.put(o); }
-            offer.put("files", fa); offer.put("total", t.total);
+            offer.put("files", fa); offer.put("total", t.total); offer.put("msg", t.msg);
             s.sendJson(offer);
             Proto.Msg r = s.recv((int) PROMPT_MS + 10000);
             if (!"terima".equals(r.t())) { t.status = "ditolak"; t.err = r.json != null ? r.json.optString("why", "Ditolak") : "Ditolak"; emit(); return; }
@@ -564,7 +568,10 @@ final class Core {
     private void inReceive(Proto.Hs h, JSONObject j, String ip) throws Exception {
         Proto.Session s = h.sess;
         JSONArray raw = j.optJSONArray("files");
-        if (raw == null || raw.length() == 0 || raw.length() > 5000) { tolak(s, "Daftar file tidak sah"); return; }
+        String msg = j.optString("msg", "");
+        if (msg.length() > 20000) msg = msg.substring(0, 20000);
+        if (raw == null) raw = new JSONArray();
+        if ((raw.length() == 0 && msg.trim().isEmpty()) || raw.length() > 5000) { tolak(s, "Daftar file tidak sah"); return; }
         List<String[]> files = new ArrayList<>();
         long total = 0;
         for (int i = 0; i < raw.length(); i++) {
@@ -577,6 +584,7 @@ final class Core {
         boolean known = isKnown(h.peer.id);
         if (settings().optBoolean("onlyKnown") && !known) { tolak(s, "Perangkat tujuan hanya menerima dari perangkat dikenal"); return; }
         Transfer t = newTransfer("terima", h.peer.id, h.peer.name, h.peer.type, files, known);
+        t.msg = msg;
         t.status = "menunggu"; t.sess = s;
         boolean yes;
         if (known && settings().optBoolean("autoKnown")) yes = true;
@@ -585,7 +593,7 @@ final class Core {
             d.put("kind", "kirim"); d.put("code", h.code); d.put("from", fromJson(h.peer, ip));
             JSONArray fl = new JSONArray();
             for (int i = 0; i < Math.min(30, files.size()); i++) { JSONObject o = new JSONObject(); o.put("n", files.get(i)[0]); o.put("s", Long.parseLong(files.get(i)[1])); fl.put(o); }
-            d.put("files", fl); d.put("count", files.size()); d.put("total", total); d.put("tid", t.id);
+            d.put("files", fl); d.put("count", files.size()); d.put("total", total); d.put("tid", t.id); d.put("msg", msg);
             yes = ask(d, s);
         }
         if (!yes || t.cancelled) {
@@ -622,9 +630,9 @@ final class Core {
         } catch (Exception e) {
             if (sink != null) sink.abort();
             if (!t.status.equals("batal")) {
-                String msg = e.getMessage() == null ? "Gagal" : e.getMessage();
-                t.status = msg.startsWith("Dibatalkan") ? "batal" : "gagal";
-                t.err = msg;
+                String em = e.getMessage() == null ? "Gagal" : e.getMessage();
+                t.status = em.startsWith("Dibatalkan") ? "batal" : "gagal";
+                t.err = em;
             }
             emit();
         } finally { t.sess = null; }

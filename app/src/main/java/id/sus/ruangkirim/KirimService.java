@@ -184,7 +184,8 @@ public class KirimService extends Service {
         JSONObject f = p.optJSONObject("from");
         String who = f == null ? "Perangkat" : f.optString("name");
         boolean known = f != null && f.optBoolean("known");
-        String title = "pasang".equals(p.optString("kind")) ? "Permintaan pasangkan dari " + who : who + " mau mengirim " + p.optInt("count") + " file";
+        int cnt = p.optInt("count");
+        String title = "pasang".equals(p.optString("kind")) ? "Permintaan pasangkan dari " + who : who + (cnt > 0 ? " mau mengirim " + cnt + " file" : " mengirim pesan");
         String body = "pasang".equals(p.optString("kind")) ? "Ketuk untuk mencocokkan kode " + p.optString("code") : (known ? "Perangkat dikenal" : "BELUM DIKENAL") + " · ketuk untuk Terima / Tolak";
         Notification n = new Notification.Builder(this, CH_ASK)
                 .setSmallIcon(R.drawable.ic_notif)

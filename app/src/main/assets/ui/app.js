@@ -49,66 +49,109 @@ if (!window.RK && window.RKNative) {
     $("#nm").onclick = renameDialog;
   }
 
+  // ---------- keranjang ----------
+  const sel = new Set();   // perangkat tujuan yang dipilih
+  let touched = false;     // pengguna sudah memilih sendiri
+  const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  const msgEl = $("#msg");
+  function targets() { return S.devices.filter((d) => sel.has(d.id) && (d.online || d.known)); }
+  function renderBasket() {
+    const b = S.basket;
+    $("#bEmpty").hidden = !b;
+    $("#bAddDir").hidden = HP;
+    $("#bItems").innerHTML = b
+      ? b.items.map((x) => `<span class="chip" title="${esc(x.n)}">${x.dir ? "📁 " : ""}<span>${esc(x.n)}</span><em>${x.dir ? x.count + " file · " : ""}${size(x.s)}</em><button data-k="${esc(x.k)}" aria-label="Keluarkan">✕</button></span>`).join("")
+      : `<div class="bempty">${HP ? "Tekan <b>File</b>, atau bagikan dari Galeri / File lewat <b>Bagikan → Ruang Kirim</b>." : "Seret file atau folder ke jendela ini, atau tekan <b>File</b> / <b>Folder</b>."}</div>`;
+    updateSend();
+  }
+  function updateSend() {
+    const t = targets(), b = S.basket, msg = msgEl.value.trim();
+    const what = b ? `${b.count} file (${size(b.total)})${msg ? " + pesan" : ""}` : msg ? "pesan" : "";
+    $("#bTo").textContent = !t.length ? "Pilih perangkat tujuan di bawah. Bisa lebih dari satu." : `${what ? what + " → " : ""}${t.map((d) => d.name).join(", ")}`;
+    $("#bSendT").textContent = t.length > 1 ? `Kirim ke ${t.length} perangkat` : "Kirim";
+    $("#bSend").disabled = !t.length || (!b && !msg);
+  }
+  $("#bItems").addEventListener("click", (e) => { const k = e.target.closest("[data-k]"); if (k) RK.call("basketRemove", k.dataset.k); });
+  $("#bAdd").onclick = () => run(RK.call("basketAdd"));
+  $("#bAddDir").onclick = () => run(RK.call("basketAddFolder"));
+  $("#bEmpty").onclick = () => RK.call("basketClear");
+  msgEl.addEventListener("input", updateSend);
+  $("#bSend").onclick = () => {
+    const ids = targets().map((d) => d.id);
+    run(RK.call("sendBasket", ids, msgEl.value), (n) => `Dikirim ke ${n} perangkat. Tunggu mereka menekan Terima.`).then((n) => { if (n) { msgEl.value = ""; updateSend(); } });
+  };
+
   // ---------- perangkat ----------
   function renderDevices() {
     const list = S.devices;
     const box = $("#devs");
+    for (const id of [...sel]) if (!list.some((d) => d.id === id)) sel.delete(id);
+    // hanya satu perangkat aktif: langsung dipilih
+    const on = list.filter((d) => d.online);
+    if (!touched && !sel.size && on.length === 1) sel.add(on[0].id);
     if (!list.length) {
       box.innerHTML = `<div class="empty"><b>Belum ada perangkat</b>Buka Ruang Kirim di ${HP ? "PC" : "HP atau PC lain"} yang tersambung ke WiFi yang sama.${HP ? " Atau tekan <b style='display:inline;font:inherit'>Pindai QR di PC</b>." : " Untuk HP, tekan <b style='display:inline;font:inherit'>Kode QR untuk HP</b>."}</div>`;
     } else {
       box.innerHTML = list.map((d) => `
-        <div class="dev ${d.online ? "" : "off"}" data-id="${esc(d.id)}">
+        <div class="dev ${d.online ? "" : "off"} ${sel.has(d.id) ? "sel" : ""}" data-id="${esc(d.id)}" role="checkbox" aria-checked="${sel.has(d.id)}">
           <div class="dhead">
+            <span class="check">${CHECK}</span>
             <div class="dico">${ICON[d.type] || ICON.pc}</div>
             <div class="dname"><b>${esc(d.name)}</b><small>${d.online ? "Aktif" : "Tidak aktif"}${d.ip ? " · " + esc(d.ip) : ""}</small></div>
-            <span class="tag ${d.known ? "k" : "u"}">${d.known ? "Dikenal" : "Belum dikenal"}</span>
           </div>
           <div class="dact">
-            <button class="btn pri" data-a="send" ${d.online || d.known ? "" : "disabled"}>${ICON.up}${S.pending ? "Kirim ke sini" : "Kirim file"}</button>
-            ${HP || S.pending ? "" : `<button class="btn" data-a="folder" ${d.online || d.known ? "" : "disabled"}>Kirim folder</button>`}
-            ${d.known ? `<button class="btn" data-a="forget" title="Lupakan perangkat ini">Lupakan</button>` : `<button class="btn" data-a="pair" ${d.online ? "" : "disabled"}>Pasangkan</button>`}
+            <span class="tag ${d.known ? "k" : "u"}">${d.known ? "Dikenal" : "Belum dikenal"}</span>
+            ${d.known ? `<button class="btn sm" data-a="forget" title="Lupakan perangkat ini">Lupakan</button>` : `<button class="btn sm" data-a="pair" ${d.online ? "" : "disabled"}>Pasangkan</button>`}
           </div>
         </div>`).join("");
     }
-    $("#devHint").textContent = list.length && !HP ? "Bisa juga seret file dari Explorer ke kartu perangkat." : list.length ? "" : "Tidak muncul? Pastikan kedua perangkat di WiFi yang sama, lalu izinkan Ruang Kirim saat Windows Firewall bertanya (jaringan Pribadi). Atau pakai Tambah lewat IP.";
+    $("#devHint").textContent = list.length ? "Ketuk kartu untuk memilih tujuan, lalu tekan Kirim di keranjang." : "Tidak muncul? Pastikan kedua perangkat di WiFi yang sama, lalu izinkan Ruang Kirim saat Windows Firewall bertanya (jaringan Pribadi). Atau pakai Tambah lewat IP.";
+    updateSend();
   }
   $("#devs").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-a]");
-    if (!b) return;
-    const id = b.closest(".dev").dataset.id;
+    const card = e.target.closest(".dev");
+    if (!card) return;
+    const id = card.dataset.id;
     const d = S.devices.find((x) => x.id === id);
+    const b = e.target.closest("[data-a]");
+    if (!b) {
+      if (!d || !(d.online || d.known)) return;
+      touched = true;
+      sel.has(id) ? sel.delete(id) : sel.add(id);
+      return renderDevices();
+    }
     const a = b.dataset.a;
-    if (a === "send") {
-      if (S.pending) run(RK.call("sendPending", id));
-      else run(RK.call("send", id));
-    } else if (a === "folder") run(RK.call("sendFolder", id));
-    else if (a === "pair") run(RK.call("pair", id), (n) => `Terpasang dengan ${n}. Sekarang perangkat ini dikenal.`);
+    if (a === "pair") run(RK.call("pair", id), (n) => `Terpasang dengan ${n}. Sekarang perangkat ini dikenal.`);
     else if (a === "forget") confirmBox(`Lupakan ${d ? d.name : "perangkat ini"}?`, "Kiriman berikutnya dari perangkat ini akan ditandai Belum dikenal, dan perlu dipasangkan lagi.", "Lupakan", () => RK.call("forget", id));
   });
 
-  // seret file ke kartu perangkat (PC)
+  // seret file ke jendela (PC): masuk keranjang; kalau dilepas di kartu perangkat, perangkat itu ikut dipilih
   if (!HP) {
-    let depth = 0;
+    let hideT = null;
     const has = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
-    window.addEventListener("dragenter", (e) => { if (!has(e)) return; depth++; $("#dropall").hidden = false; });
-    window.addEventListener("dragleave", () => { if (--depth <= 0) { depth = 0; $("#dropall").hidden = true; } });
+    const clear = () => { $("#dropall").hidden = true; document.querySelectorAll(".dev.drop").forEach((x) => x.classList.remove("drop")); };
+    const keep = () => { $("#dropall").hidden = false; clearTimeout(hideT); hideT = setTimeout(clear, 250); }; // hilang sendiri kalau seret keluar jendela
+    window.addEventListener("dragenter", (e) => { if (has(e)) { e.preventDefault(); keep(); } });
     window.addEventListener("dragover", (e) => {
       if (!has(e)) return;
       e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      keep();
       document.querySelectorAll(".dev.drop").forEach((x) => x.classList.remove("drop"));
       const card = e.target.closest?.(".dev:not(.off)");
       if (card) card.classList.add("drop");
-      e.dataTransfer.dropEffect = card ? "copy" : "none";
     });
     window.addEventListener("drop", (e) => {
       e.preventDefault();
-      depth = 0; $("#dropall").hidden = true;
-      document.querySelectorAll(".dev.drop").forEach((x) => x.classList.remove("drop"));
+      clearTimeout(hideT);
       const card = e.target.closest?.(".dev:not(.off)");
-      if (!card) return;
-      const paths = [...e.dataTransfer.files].map((f) => RK.pathOf(f)).filter(Boolean);
-      if (paths.length) run(RK.call("send", card.dataset.id, paths));
+      clear();
+      const paths = [...(e.dataTransfer?.files || [])].map((f) => RK.pathOf(f)).filter(Boolean);
+      if (!paths.length) return;
+      if (card) { touched = true; sel.add(card.dataset.id); }
+      run(RK.call("basketAdd", paths), (n) => n ? `${n} item masuk keranjang${card ? "" : ". Pilih perangkat tujuan, lalu Kirim."}` : "Sudah ada di keranjang");
     });
+    window.addEventListener("dragend", clear);
   }
 
   // ---------- kiriman ----------
@@ -116,23 +159,31 @@ if (!window.RK && window.RKNative) {
   function renderTransfers() {
     const L = S.transfers;
     $("#bClear").hidden = !L.some((t) => !["menyambung", "menunggu", "jalan"].includes(t.status));
-    if (!L.length) { $("#tlist").innerHTML = `<div class="empty"><b>Belum ada kiriman</b>File yang dikirim dan diterima akan muncul di sini.</div>`; return; }
+    if (!L.length) { $("#tlist").innerHTML = `<div class="empty"><b>Belum ada kiriman</b>File dan pesan yang dikirim dan diterima akan muncul di sini.</div>`; return; }
     $("#tlist").innerHTML = L.map((t) => {
       const pct = t.total ? Math.min(100, (t.done / t.total) * 100) : t.status === "selesai" ? 100 : 0;
       const first = t.files[0] ? t.files[0].n.split("/").pop() : "";
-      const title = t.count > 1 ? `${esc(first)} +${t.count - 1} file` : esc(first);
+      const title = !t.count ? "Pesan" : t.count > 1 ? `${esc(first)} +${t.count - 1} file` : esc(first);
       const who = (t.dir === "kirim" ? "ke " : "dari ") + esc(t.peer.name) + (t.known ? "" : " (belum dikenal)");
       let s = STAT[t.status] || t.status;
       if (t.status === "jalan") {
         const left = t.speed > 0 ? (t.total - t.done) / t.speed : 0;
         s = `${size(t.done)} / ${size(t.total)} · ${size(t.speed)}/dtk${left ? " · sisa " + dur(left) : ""}`;
-      } else if (t.status === "selesai") s = `Selesai · ${size(t.total)}`;
+      } else if (t.status === "selesai") s = t.count ? `Selesai · ${size(t.total)}` : "Terkirim";
       if (t.err && t.status !== "selesai") s += " · " + esc(t.err);
       const live = ["menyambung", "menunggu", "jalan"].includes(t.status);
+      const showMsg = t.msg && (t.dir === "kirim" || t.status === "selesai");
+      let btn = "";
+      if (live) btn = `<button class="btn sm dan" data-a="cancel">Batal</button>`;
+      else {
+        if (showMsg) btn += `<button class="btn sm" data-a="copy">Salin pesan</button>`;
+        if (t.dir === "terima" && t.status === "selesai" && t.saved.length) btn += `<button class="btn sm" data-a="open">${HP ? "Buka" : "Tampilkan"}</button>`;
+      }
       return `<div class="tr st-${t.status}" data-t="${esc(t.id)}">
         <div class="tdir">${t.dir === "kirim" ? ICON.up : ICON.down}</div>
         <div class="tt"><b>${title}</b><small>${who}</small></div>
-        <div class="tbtn">${live ? `<button class="btn sm dan" data-a="cancel">Batal</button>` : t.dir === "terima" && t.status === "selesai" && t.saved.length ? `<button class="btn sm" data-a="open">${HP ? "Buka" : "Tampilkan"}</button>` : ""}</div>
+        <div class="tbtn">${btn}</div>
+        ${showMsg ? `<div class="msgbox">${esc(t.msg)}</div>` : ""}
         <div class="tt" style="grid-column:2"><div class="prog"><i style="width:${pct.toFixed(1)}%"></i></div><small class="s">${s}</small></div>
       </div>`;
     }).join("");
@@ -143,6 +194,7 @@ if (!window.RK && window.RKNative) {
     const tid = b.closest(".tr").dataset.t;
     if (b.dataset.a === "cancel") RK.call("cancel", tid);
     else if (b.dataset.a === "open") run(RK.call("open", tid, 0));
+    else if (b.dataset.a === "copy") { const t = S.transfers.find((x) => x.id === tid); if (t) run(RK.call("copy", t.msg), "Pesan disalin"); }
   });
   $("#bClear").onclick = () => RK.call("clearDone");
   $("#bDir").onclick = () => run(RK.call("openDir"));
@@ -190,9 +242,11 @@ if (!window.RK && window.RKNative) {
     const f = p.from;
     let html;
     if (p.kind === "kirim") {
-      html = `<h3>${esc(f.name)} mau mengirim ${p.count} file</h3><p class="muted">${esc(f.type === "hp" ? "HP" : "PC")} · ${esc(f.ip || "")} · total ${size(p.total)}</p>
+      const what = p.count ? `mau mengirim ${p.count} file${p.msg ? " dan pesan" : ""}` : "mengirim pesan";
+      html = `<h3>${esc(f.name)} ${what}</h3><p class="muted">${esc(f.type === "hp" ? "HP" : "PC")} · ${esc(f.ip || "")}${p.count ? " · total " + size(p.total) : ""}</p>
         ${trustBlock(f)}
-        <ul class="files">${p.files.map((x) => `<li><span>${esc(x.n)}</span><em>${size(x.s)}</em></li>`).join("")}${p.count > p.files.length ? `<li><span>… dan ${p.count - p.files.length} file lainnya</span></li>` : ""}</ul>
+        ${p.msg ? `<div class="msgbox">${esc(p.msg)}</div>` : ""}
+        ${p.count ? `<ul class="files">${p.files.map((x) => `<li><span>${esc(x.n)}</span><em>${size(x.s)}</em></li>`).join("")}${p.count > p.files.length ? `<li><span>… dan ${p.count - p.files.length} file lainnya</span></li>` : ""}</ul>` : ""}
         <div class="timer"><i id="tbar"></i></div>
         <div class="acts"><button class="btn dan" data-no>Tolak</button><button class="btn pri" data-yes>Terima</button></div>`;
     } else if (p.kind === "pasang") {
@@ -258,13 +312,6 @@ if (!window.RK && window.RKNative) {
   $("#bIp").onclick = () => inputBox("Tambah lewat alamat IP", `Kalau perangkat tidak muncul sendiri (sebagian router memblok pencarian). Lihat alamat IP di bagian atas Ruang Kirim perangkat itu.`, 'placeholder="192.168.1.7" inputmode="decimal"', "Tambah", (v) => run(RK.call("addIp", v), (n) => `${n} ditemukan.`));
   $("#bScanW").onclick = () => { RK.call("rescan"); toast("Mencari perangkat di WiFi ini…", 1500); };
 
-  // ---------- kiriman dari aplikasi lain (HP: Bagikan) ----------
-  function renderPending() {
-    const p = S.pending;
-    $("#pending").hidden = !p;
-    if (p) $("#pendTxt").textContent = `${p.count} file (${size(p.total)}) siap dikirim. Pilih perangkat tujuan.`;
-  }
-  $("#pendX").onclick = () => RK.call("clearPending");
 
   // ---------- pengaturan ----------
   function openSettings() {
@@ -275,6 +322,7 @@ if (!window.RK && window.RKNative) {
       <div class="row"><div class="lab">Folder file yang diterima<small>${esc(s.saveDir)}</small></div>${HP ? "" : '<button class="btn sm" data-a="dir">Ganti</button>'}</div>
       <div class="row"><div class="lab">Terima otomatis dari perangkat dikenal<small>Tanpa tanya Ya/Tidak untuk perangkat yang sudah dipasangkan.</small></div>${sw("autoKnown")}</div>
       <div class="row"><div class="lab">Hanya terima dari perangkat dikenal<small>Kiriman dari perangkat yang belum dipasangkan langsung ditolak.</small></div>${sw("onlyKnown")}</div>
+      <div class="row"><div class="lab">Simpan isi keranjang setelah kirim<small>Kalau mati, keranjang dikosongkan otomatis setelah tombol Kirim ditekan.</small></div>${sw("keepBasket")}</div>
       ${HP ? "" : `<div class="row"><div class="lab">Tetap berjalan di tray saat jendela ditutup<small>Supaya tetap bisa menerima file.</small></div>${sw("tray")}</div>`}
       <div class="row"><div class="lab">Kode perangkat ini<small>${esc(m.fp)} · port ${esc(m.port)} · ${esc((m.ips || []).join(", ") || "belum tersambung")}</small></div></div>
       <p class="muted">Semua file dienkripsi ujung ke ujung (ECDH P-256 + AES-256-GCM) dan hanya lewat WiFi yang sama, tidak lewat internet.${HP ? "" : " Kalau perangkat lain tidak bisa menemukan PC ini, izinkan Ruang Kirim di Windows Firewall untuk jaringan Pribadi."}</p>
@@ -297,7 +345,7 @@ if (!window.RK && window.RKNative) {
   $("#bScan").hidden = !HP;
   function render(s) {
     S = s;
-    renderMe(); renderPending(); renderDevices(); renderTransfers(); syncPrompts();
+    renderMe(); renderBasket(); renderDevices(); renderTransfers(); syncPrompts();
   }
   RK.onState(render);
   RK.call("state").then(render).catch(() => {});
