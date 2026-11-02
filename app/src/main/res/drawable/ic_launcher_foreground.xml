@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HP dengan panah keluar, di area aman 72dp tengah -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:strokeColor="#F4EFE6" android:strokeWidth="4.2" android:fillColor="#00000000"
+        android:pathData="M36,35 h17 a4,4 0 0 1 4,4 v30 a4,4 0 0 1 -4,4 h-17 a4,4 0 0 1 -4,-4 v-30 a4,4 0 0 1 4,-4 z" />
+    <path android:fillColor="#F4EFE6" android:pathData="M44.5,66.5 m-2,0 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0" />
+    <path android:strokeColor="#F4EFE6" android:strokeWidth="4.8" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="#00000000" android:pathData="M62,54 h16 M70,46 l8,8 l-8,8" />
+</vector>
